@@ -12,6 +12,20 @@
 基于AI大模型的聊天插件，支持大模型任意切换、上下文记忆、群聊智能参与、图片识别、MCP等功能
 
 安装插件后，请先配置超级用户信息，然后使用`px about`命令获取插件信息，使用指令配置相关配置
+
+### ✨ 核心特性
+
+- **多模型切换** - 支持配置多个AI模型（兼容OpenAI API），聊天和图片识别可分别指定模型
+- **上下文记忆** - 自动维护对话上下文（最近20条），私聊和群聊独立上下文
+- **群聊智能参与** - AI自动判断是否参与群聊讨论，活跃度自动衰减与boost
+- **延迟回复** - 群聊消息延迟15-30秒后判断回复，被@时3-5秒快速回复，模拟真人节奏
+- **思考模式** - 支持AI思考模式（reasoning），群聊可合并判断+回复节省Token
+- **图片识别** - 多模态模型识别图片内容，群聊延迟识别、私聊即时识别
+- **MCP工具调用** - 支持SSE/stdio两种传输方式的MCP服务器，AI可自主调用外部工具
+- **联网搜索** - 可启用AI模型的联网搜索能力
+- **人设配置** - 自定义AI角色人设，始终保持角色不脱戏
+- **分段发送** - 回复自动分段发送，模拟真实网友聊天习惯
+
 ## 💿 安装
 
 <details open>
@@ -92,19 +106,24 @@ pxchat_mcp='{
     "QQ群号"
   ], // 启用QQ群
   "group_chat_probability": 1, // 群聊活跃度基础值
+  "group_probabilities": {
+    "QQ群号": 0.5
+  }, // 每群独立活跃度配置（可选）
   "chat_enabled": true, // 是否开启聊天
-  "enable_search": false, // 是否开启
+  "enable_search": false, // 是否开启搜索
   "image_recognition_enabled": true, // 是否开启图片识别
   "mcp_enabled": true, // 是否开启mcp功能
   "mcp_servers": {
     "web_search": {
+      "type": "sse",
       "url": "https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/sse",
       "headers": {
         "Authorization": "Bearer your-api-key"
       },
-      "enabled": true // 是否开启
+      "enabled": true
     },
     "web_parser": {
+      "type": "sse",
       "url": "https://dashscope.aliyuncs.com/api/v1/mcps/WebParser/sse",
       "headers": {
         "Authorization": "Bearer your-api-key"
@@ -118,31 +137,22 @@ pxchat_mcp='{
       "name": "ds-chat",
       "api_key": "{your-api-key}",
       "api_url": "https://api.deepseek.com",
-      "model": "deepseek-chat"
+      "model": "deepseek-chat",
+      "thinking": false
     },
     {
-      "name": "qw-max0923",
+      "name": "qw-max-thinking",
       "api_key": "{your-api-key}",
       "api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "model": "qwen3-max-2025-09-23"
+      "model": "qwen3-max-2025-09-23",
+      "thinking": true
     },
     {
-      "name": "qw-vl", // 多模态大模型
+      "name": "qw-vl",
       "api_key": "{your-api-key}",
       "api_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-      "model": "qwen3-vl-plus"
-    },
-    {
-      "name": "free-vl", // 硅基流动免费识图模型
-      "api_key": "{your-api-key}",
-      "api_url": "https://api.siliconflow.cn/v1",
-      "model": "THUDM/GLM-4.1V-9B-Thinking"
-    },
-    {
-      "name": "qw3-8b-free", // 硅基流动免费对话模型
-      "api_key": "{your-api-key}",
-      "api_url": "https://api.siliconflow.cn/v1",
-      "model": "Qwen/Qwen3-8B"
+      "model": "qwen3-vl-plus",
+      "thinking": false
     }
   ],
   "current_ai_config": 0, // 对话模型索引
@@ -154,17 +164,20 @@ pxchat_mcp='{
 ### 指令表
 ```
 📋 系统状态
-• px status - 查看状态
-• px activity - 群活跃度
+• px status - 查看完整状态
+• px activity - 群活跃度和延迟计时器
 
 👥 群组管理
 • px group - 查看已启用群组
 • px group add <群号> - 启用群组
 • px group del <群号> - 禁用群组
+• px group prob <群号> - 查看群独立概率
+• px group prob <群号> set <0.0-1.0> - 设置群独立概率
+• px group prob <群号> reset - 恢复使用全局概率
 
 🔧 AI配置管理
 • px ai - 查看AI配置
-• px ai add <名称> <key> <url> <模型>
+• px ai add <名称> <key> <url> <模型> [thinking] - 添加配置（可选开启思考模式）
 • px ai del <名称> - 删除配置
 • px ai switch <名称> - 切换聊天配置
 • px image switch <名称> - 切换图片识别配置
@@ -183,11 +196,30 @@ pxchat_mcp='{
 • px personality set <内容>
 
 📊 群活跃概率设置
-• px prob - 查看触发概率
-• px prob set <0.0-1.0>
+• px prob - 查看全局触发概率
+• px prob set <0.0-1.0> - 设置全局触发概率
 
-使用 'px <命令>' 查看详细用法
+💡 延迟回复机制
+• 群聊非@消息会在用户停止发送15-30秒后判断是否回复
+• 被@时3-5秒快速回复
+• 同一用户继续发送消息会重置计时器
 ```
+
+### 🧠 思考模式
+
+添加AI配置时可开启思考模式（第6个参数传`1`），开启后群聊会将「是否回复判断」和「生成回复」合并为一次API调用，节省Token消耗：
+
+```
+px ai add my_model sk-xxx https://api.example.com gpt-4 1
+```
+
+### 📈 活跃度机制
+
+- 被@或触发回复时，活跃度提升至基础值的2倍（上限1.0）
+- 60秒boost期后恢复基础值，之后每300秒衰减0.1
+- 衰减下限为基础概率的20%
+- 支持为每个群设置独立的活跃度概率
+
 ## 🎨 效果图
 ### 群聊参与
 ![](img/群聊参与.png)
