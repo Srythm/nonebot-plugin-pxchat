@@ -115,6 +115,9 @@ async def _delayed_reply_check(group_id: str, key: str, is_at: bool = False, del
     # 收集未判断消息的ID，用于标记
     unjudged_ids = [msg.get("msg_id") for msg in unjudged if msg.get("msg_id")]
 
+    # 按需前置识别图片（仅当未判断消息包含图片时触发）
+    await _recognize_cached_images(key, unjudged)
+
     # 根据是否为思考模型走不同逻辑
     is_thinking = chat_manager.is_thinking_enabled()
 
@@ -140,9 +143,6 @@ async def _delayed_reply_check(group_id: str, key: str, is_at: bool = False, del
 
         pxchat_logger.info(f"[延迟] 群{group_id} 思考:回复")
         group_manager.renew_probability(group_id)
-
-        # 识别图片缓存
-        await _recognize_cached_images(key, unjudged)
 
         # 直接使用合并调用返回的回复内容
         reply = result.get("reply")
@@ -172,9 +172,6 @@ async def _delayed_reply_check(group_id: str, key: str, is_at: bool = False, del
 
         pxchat_logger.info(f"[延迟] 群{group_id} 判断:回复")
         group_manager.renew_probability(group_id)
-
-        # 识别图片缓存
-        await _recognize_cached_images(key, unjudged)
 
         # 生成回复
         try:
