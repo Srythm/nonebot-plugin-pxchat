@@ -47,6 +47,12 @@ class ChatManager:
             "enable_search": False,   # 是否启用搜索功能
             "mcp_enabled": False,     # MCP功能总开关
             "mcp_servers": config.pxchat_mcp,
+            # 自动禁言配置
+            "auto_mute_enabled": False,
+            "auto_mute_min_duration": 60,     # 最短禁言秒数
+            "auto_mute_max_duration": 600,    # 最长禁言秒数
+            "auto_mute_cooldown": 300,        # 群内禁言冷却秒数
+            "auto_mute_admin_groups": {},     # 手动指定Bot为管理员的群 {group_id: True}
         }
     
     def _save_manager_config(self):
@@ -370,6 +376,72 @@ class ChatManager:
     def get_current_image_config_index(self) -> int:
         """获取当前图片识别配置索引"""
         return self._data.get("current_image_recognition_config", 0)
+
+    # ========== 自动禁言配置 ==========
+
+    def is_auto_mute_enabled(self) -> bool:
+        """检查自动禁言是否开启"""
+        return bool(self._data.get("auto_mute_enabled", False))
+
+    def set_auto_mute_enabled(self, enabled: bool) -> bool:
+        """设置自动禁言开关"""
+        if self._data.get("auto_mute_enabled", False) != enabled:
+            self._data["auto_mute_enabled"] = enabled
+            self._save_manager_config()
+            return True
+        return False
+
+    def get_auto_mute_min_duration(self) -> int:
+        """获取最短禁言秒数"""
+        return int(self._data.get("auto_mute_min_duration", 60))
+
+    def set_auto_mute_min_duration(self, seconds: int) -> bool:
+        """设置最短禁言秒数"""
+        if seconds < 10:
+            return False
+        if self._data.get("auto_mute_min_duration", 60) != seconds:
+            self._data["auto_mute_min_duration"] = seconds
+            self._save_manager_config()
+            return True
+        return False
+
+    def get_auto_mute_max_duration(self) -> int:
+        """获取最长禁言秒数"""
+        return int(self._data.get("auto_mute_max_duration", 600))
+
+    def set_auto_mute_max_duration(self, seconds: int) -> bool:
+        """设置最长禁言秒数"""
+        if seconds < 10:
+            return False
+        if self._data.get("auto_mute_max_duration", 600) != seconds:
+            self._data["auto_mute_max_duration"] = seconds
+            self._save_manager_config()
+            return True
+        return False
+
+    def get_auto_mute_cooldown(self) -> int:
+        """获取禁言冷却秒数"""
+        return int(self._data.get("auto_mute_cooldown", 300))
+
+    def set_auto_mute_cooldown(self, seconds: int) -> bool:
+        """设置禁言冷却秒数"""
+        if seconds < 0:
+            return False
+        if self._data.get("auto_mute_cooldown", 300) != seconds:
+            self._data["auto_mute_cooldown"] = seconds
+            self._save_manager_config()
+            return True
+        return False
+
+    def get_auto_mute_admin_groups(self) -> dict:
+        """获取手动指定的管理员群"""
+        return self._data.get("auto_mute_admin_groups", {})
+
+    def set_auto_mute_admin_group(self, group_id: str, is_admin: bool):
+        """手动设置某群的Bot管理员状态"""
+        groups = self._data.setdefault("auto_mute_admin_groups", {})
+        groups[str(group_id)] = is_admin
+        self._save_manager_config()
 
 # 全局管理器实例
 chat_manager = ChatManager()

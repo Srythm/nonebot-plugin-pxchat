@@ -5,6 +5,7 @@ from nonebot.rule import to_me
 from .manager import chat_manager
 from .send2root import send_forward_message, create_text_node, send_long_message
 from .mcp_manager import mcp_client
+from .admin import check_bot_is_admin, clear_admin_cache
 from .log import logger as pxchat_logger
 
 # 权限检查函数
@@ -24,6 +25,7 @@ probability_cmd = on_command("px prob", rule=to_me(), priority=10, block=True)
 search_cmd = on_command("px search", rule=to_me(), priority=10, block=True)
 image_cmd = on_command("px image", rule=to_me(), priority=10, block=True)
 mcp_cmd = on_command("px mcp", rule=to_me(), priority=10, block=True)
+mute_cmd = on_command("px mute", rule=to_me(), priority=10, block=True)
 
 
 @about_cmd.handle()
@@ -559,3 +561,81 @@ async def handle_mcp(event: MessageEvent, args: Message = CommandArg()):
             await mcp_cmd.finish(f"❌ 获取工具列表失败")
     else:
         await mcp_cmd.finish("用法:\n• px mcp on/off\n• px mcp server <服务器名> on/off\n• px mcp refresh - 刷新缓存\n• px mcp tools - 查看工具")
+
+
+@mute_cmd.handle()
+async def handle_mute(event: MessageEvent, args: Message = CommandArg()):
+    if not await check_super_user(event):
+        await mute_cmd.finish("你没有权限")
+
+    arg_text = args.extract_plain_text().strip()
+
+    if not arg_text:
+        enabled = "✅开启" if chat_manager.is_auto_mute_enabled() else "❌关闭"
+        min_dur = chat_manager.get_auto_mute_min_duration()
+        max_dur = chat_manager.get_auto_mute_max_duration()
+        cooldown = chat_manager.get_auto_mute_cooldown()
+        admin_groups = chat_manager.get_auto_mute_admin_groups()
+
+        lines = [
+            f"🔇 自动禁言: {enabled}",
+            f"⏱️ 禁言时长: {min_dur}s ~ {max_dur}s",
+            f"🕐 群冷却: {cooldown}s",
+        ]
+        if admin_groups:
+            lines.append(f"👑 手动指定管理群: {', '.join(str(g) for g in admin_groups)}")
+        else:
+            lines.append("👑 管理员检测: 自动（每次判断时检测）")
+        lines.append("")
+        lines.append("用法:")
+        lines.append("• px mute on/off - 开关自动禁言")
+        lines.append("• px mute duration <最小秒> <最大秒> - 设置禁言时长范围")
+        lines.append("• px mute cooldown <秒> - 设置群冷却时间")
+        lines.append("• px mute check - 检测当前群Bot管理员状态")
+        await mute_cmd.finish("\n".join(lines))
+
+    parts = arg_text.split()
+
+    if parts[0] == "on":
+        if chat_manager.set_auto_mute_enabled(True):
+            await mute_cmd.finish("✅ 已开启自动禁言")
+        else:
+            await mute_cmd.finish("⚠️ 自动禁言已是开启状态")
+    elif parts[0] == "off":
+        if chat_manager.set_auto_mute_enabled(False):
+            await mute_cmd.finish("✅ 已关闭自动禁言")
+        else:
+            await mute_cmd.finish("⚠️ 自动禁言已是关闭状态")
+    elif parts[0] == "duration" and len(parts) >= 3:
+        try:
+            min_s = int(parts[1])
+            max_s = int(parts[2])
+            if min_s < 10 or max_s < 10 or min_s > max_s:
+                await mute_cmd.finish("时长需 >= 10s，且最小值不能大于最大值")
+            chat_manager.set_auto_mute_min_duration(min_s)
+            chat_manager.set_auto_mute_max_duration(max_s)
+            await mute_cmd.finish(f"✅ 禁言时长: {min_s}s ~ {max_s}s")
+        except ValueError:
+            await mute_cmd.finish("时长必须是整数秒")
+    elif parts[0] == "cooldown" and len(parts) >= 2:
+        try:
+            sec = int(parts[1])
+            if sec < 0:
+                await mute_cmd.finish("冷却时间不能为负数")
+            chat_manager.set_auto_mute_cooldown(sec)
+            await mute_cmd.finish(f"✅ 群冷却时间: {sec}s")
+        except ValueError:
+            await mute_cmd.finish("冷却时间必须是整数秒")
+    elif parts[0] == "check":
+        group_id = getattr(event, "group_id", None)
+        if not group_id:
+            await mute_cmd.finish("请在群聊中使用此命令")
+        gid = str(group_id)
+        clear_admin_cache(gid)
+        is_admin = await check_bot_is_admin(gid)
+        if is_admin:
+            await mute_cmd.finish(f"✅ 当前群({gid}) Bot拥有管理员权限")
+        else:
+            await mute_cmd.finish(f"❌ 当前群({gid}) Bot无管理员权限")
+    else:
+        await mute_cmd.finish("用法:\n• px mute on/off\n• px mute duration <最小秒> <最大秒>\n• px mute cooldown <秒>\n• px mute check")
