@@ -125,6 +125,14 @@ def get_state_hint(group_id: str) -> str:
     return "\n【你当前的状态】\n" + "\n".join(f"- {h}" for h in hints)
 
 
+def get_consecutive_replies(group_id: str) -> int:
+    """获取连续回复轮数"""
+    key = str(group_id)
+    state = _state.get(key, _default_state())
+    _auto_decay(state)
+    return state.get("consecutive_replies", 0)
+
+
 def record_reply(group_id: str):
     """机器人回复后更新状态"""
     key = str(group_id)

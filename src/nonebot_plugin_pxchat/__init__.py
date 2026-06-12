@@ -5,7 +5,7 @@ from nonebot.adapters.onebot.v11 import MessageEvent, Bot, Message, MessageSegme
 from .chat import should_reply_in_group, get_chat_reply_with_tools, thinking_group_reply
 from .context import get_context, add_message, clear_context, load_contexts, get_unjudged_messages, mark_messages_judged, has_unjudged_messages
 from .memory import load_memories, record_group_user_message, get_group_memory_hint, record_interaction
-from .state import load_state, record_reply as state_record_reply, record_group_message as state_record_group_message, skip_reply as state_skip_reply
+from .state import load_state, record_reply as state_record_reply, record_group_message as state_record_group_message, skip_reply as state_skip_reply, get_consecutive_replies
 from .admin import execute_mute_if_needed, check_bot_is_admin
 from .manager import chat_manager
 from .commands import *
@@ -188,19 +188,25 @@ async def _handle_mute_recommendation(group_id: str, mute_users: list):
 
 def _should_reply_by_confidence(model_says_reply: bool, confidence: float, group_id: str) -> tuple[bool, float]:
     """
-    综合模型判断和动态门槛决定是否回复。
-    模型说"不回" → 直接拒绝（尊重模型判断）
+    综合模型判断、动态门槛、连续回复惩罚决定是否回复。
+    模型说"不回" → 直接拒绝
     模型说"回" + confidence ≥ 门槛 → 回复
-    返回 (should_reply, threshold_used)
+    连续回复越多 → 门槛额外抬高
     """
     if not model_says_reply:
         return False, 0
     prob = group_manager.get_probability(group_id)
-    threshold = round(max(0.40, 1.0 - prob * 0.6), 2)
+    threshold = round(max(0.50, 1.0 - prob * 0.5), 2)
+    # 连续回复惩罚：每多一轮 +0.10
+    consecutive = get_consecutive_replies(group_id)
+    if consecutive > 0:
+        extra = consecutive * 0.10
+        threshold = round(min(0.95, threshold + extra), 2)
     should = confidence >= threshold
     if not should:
+        extra_info = f" 连续{consecutive}轮" if consecutive > 0 else ""
         pxchat_logger.info(
-            f"[延迟] 群{group_id} confidence={confidence:.2f} < 门槛{threshold:.2f}(参与度{prob:.2f})"
+            f"[延迟] 群{group_id} confidence={confidence:.2f} < 门槛{threshold:.2f}(参与度{prob:.2f}{extra_info})"
         )
     return should, threshold
 
@@ -269,7 +275,8 @@ async def _delayed_reply_check(group_id: str, key: str, is_at: bool = False, del
                 group_id=group_id,
             )
             add_message(key, "assistant", reply)
-            await send_delayed_group_reply(group_id, reply, get_context(key))
+            ctx_before_add = get_context(key)[:-1]
+            await send_delayed_group_reply(group_id, reply, ctx_before_add)
             state_record_reply(group_id)
         except Exception as e:
             error_msg = f"@回复生成异常:\n {str(e)}"
@@ -339,7 +346,7 @@ async def _delayed_reply_check(group_id: str, key: str, is_at: bool = False, del
         reply = result.get("reply")
         if reply:
             add_message(key, "assistant", reply)
-            await send_delayed_group_reply(group_id, reply, get_context(key))
+            await send_delayed_group_reply(group_id, reply, full_context)
             state_record_reply(group_id)
     else:
         # ===== 非思考模型：先判断再回复（两步调用） =====
@@ -389,7 +396,7 @@ async def _delayed_reply_check(group_id: str, key: str, is_at: bool = False, del
                 skip_personality=True,
             )
             add_message(key, "assistant", reply)
-            await send_delayed_group_reply(group_id, reply, get_context(key))
+            await send_delayed_group_reply(group_id, reply, full_context)
             state_record_reply(group_id)
             # 记录互动（从上下文提取参与用户）
             _record_reply_interactions(group_id, full_context)
@@ -510,13 +517,13 @@ async def send_delayed_group_reply(group_id: str, reply: str, context_messages: 
 
     segments = []
     typing_hint = "normal"
-    quote_num = None
+    quote_target = None
     try:
         data = json.loads(reply)
         if isinstance(data, dict) and "reply" in data and isinstance(data["reply"], list):
             segments = [seg for seg in data["reply"] if seg and seg.strip()]
             typing_hint = data.get("typing_delay_hint", "normal")
-            quote_num = data.get("quote_target")
+            quote_target = data.get("quote_target")
     except (json.JSONDecodeError, TypeError):
         pxchat_logger.error("[延迟回复] 回复格式解析失败")
         return
@@ -524,15 +531,16 @@ async def send_delayed_group_reply(group_id: str, reply: str, context_messages: 
     if not segments:
         return
 
-    # 根据序号查找需要引用的消息
+    # 根据id精确查找需要引用的消息
     reply_prefix = ""
-    if isinstance(quote_num, int) and quote_num > 0 and context_messages:
-        idx = quote_num - 1  # 转0-index
-        if 0 <= idx < len(context_messages):
-            msg_id = context_messages[idx].get("msg_id", "")
-            if msg_id:
-                real_id = msg_id.split("_")[0] if "_" in msg_id else msg_id
+    if isinstance(quote_target, str) and quote_target.strip() and context_messages:
+        target = quote_target.strip()
+        for msg in context_messages:
+            msg_id = msg.get("msg_id", "")
+            if msg_id and msg_id.startswith(target):
+                real_id = msg_id.split("_")[0]
                 reply_prefix = f"[CQ:reply,id={real_id}]"
+                break
 
     delay_range = _typing_delay_range(typing_hint)
     for i, segment in enumerate(segments):
@@ -854,27 +862,26 @@ class GroupProbabilityManager:
                 )
 
     async def _decay_task(self, group_id: str):
-        """活跃度衰减任务：先等60秒保持boost，然后每300秒衰减0.1，最低保持基础概率的20%"""
+        """参与度衰减：先等30秒保持boost，然后每120秒衰减0.1，最低保持基础值的20%"""
         try:
-            # 60秒boost期，保持2倍活跃度
-            await asyncio.sleep(60)
+            # 30秒boost期
+            await asyncio.sleep(30)
 
             if self._shutting_down:
-                # boost期结束，恢复基础概率
                 base_prob = chat_manager.get_group_probability(group_id)
                 group_probability_states[group_id] = round(base_prob, 2)
                 if group_id in group_timers:
                     del group_timers[group_id]
                 return
 
-            # boost期结束，恢复基础概率，开始衰减
+            # boost期结束，恢复基础值，开始衰减
             base_prob = chat_manager.get_group_probability(group_id)
             min_prob = round(base_prob * 0.2, 2)
             group_probability_states[group_id] = round(base_prob, 2)
             pxchat_logger.info(f"群{group_id} boost结束，参与度恢复: {round(base_prob, 2):.2f}")
 
             while not self._shutting_down:
-                await asyncio.sleep(300)
+                await asyncio.sleep(60)
 
                 if self._shutting_down:
                     break
@@ -901,12 +908,12 @@ class GroupProbabilityManager:
                 del group_probability_states[group_id]
 
     def renew_probability(self, group_id: str):
-        """续租活跃度，提升到基础概率的2倍（上限1.0），60秒后恢复"""
+        """续租参与度，提升到基础值的1.5倍（上限0.9），30秒后恢复"""
         if self._shutting_down:
             return False
         try:
             base_prob = chat_manager.get_group_probability(group_id)
-            boosted_prob = min(1.0, round(base_prob * 2.0, 2))
+            boosted_prob = min(0.80, round(base_prob * 1.2, 2))
             group_probability_states[group_id] = boosted_prob
 
             if group_id in group_timers:

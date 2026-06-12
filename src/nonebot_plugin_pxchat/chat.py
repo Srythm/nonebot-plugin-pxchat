@@ -88,11 +88,11 @@ def _build_thinking_params(ai_config: dict) -> dict:
 
 def _render_recent_messages(messages: list, limit: int = 10, mark_unjudged: bool = False) -> str:
     rendered = []
-    for i, msg in enumerate(messages[-limit:]):
+    for msg in messages[-limit:]:
         role = msg.get("role", "user")
         content = msg.get("content", "")
-        num = len(messages) - limit + i + 1 if len(messages) > limit else i + 1
-        prefix = f"[{num}] 用户" if role == "user" else f"[{num}] 你(px)"
+        msg_id = msg.get("msg_id", "?")
+        prefix = f"[id:{msg_id}] 用户" if role == "user" else f"[id:{msg_id}] 你(px)"
         if mark_unjudged and msg.get("is_new"):
             prefix += "【新消息】"
         rendered.append(f"{prefix}: {content}")
@@ -245,7 +245,8 @@ async def get_chat_reply_with_tools(
         # 记录思考内容
         reasoning_content = getattr(completion_obj.choices[0].message, 'reasoning_content', None)
         if reasoning_content:
-            pxchat_logger.info(f"[思考过程] {reasoning_content}")
+            compact = " | ".join(line.strip() for line in reasoning_content.split("\n") if line.strip())
+            pxchat_logger.info(f"[思考过程] {compact}")
         
         choice = completion_obj.choices[0]
         tool_calls = choice.message.tool_calls
@@ -312,7 +313,7 @@ def get_reply_format(is_group: bool = False):
         base_format += "\n群聊注意: 发言所有人可见，像普通成员一样自然参与。\n"
     base_format += """返回JSON: {"reply":["段1","段2"],"typing_delay_hint":"fast|normal|slow","quote_target":null}
 typing_delay_hint: fast(激动短句3-6s)/normal(正常8-15s)/slow(犹豫15-25s)
-quote_target: 多话题讨论需引用某条消息时填该消息的序号(如3)，否则null。引用仅用于话题交叉、避免混淆。
+quote_target: 多话题讨论需引用某条消息时填该消息的完整id(如"820259580_3286066726_1781168881388")，否则null。引用仅用于话题交叉、避免混淆。
 分段: 一段为主，主题切换/代码/较长回复时分段。纯JSON无markdown，贴近网友风格。"""
     return base_format
 
@@ -342,7 +343,7 @@ def get_thinking_group_prompt():
 返回JSON:
 {{"should_reply":bool,"reason":"...","reply_style":"short|normal|joke|question|help","confidence":0-1,"reply":["段1"],"typing_delay_hint":"fast|normal|slow","mute_users":[],"quote_target":null}}
 不回复时reply:[]。typing_delay_hint: fast(3-6s)/normal(8-15s)/slow(15-25s)
-quote_target: 多话题交叉需引用时填消息序号(如3)，否则null。
+quote_target: 多话题交叉需引用时填消息完整id，否则null。
 mute_users: [{{"user_id":"QQ号","reason":"...","duration_hint":秒}}] 或空数组。
 分段以一段为主，主题切换/代码/较长时分段，纯JSON无markdown，贴近网友风格。"""
 
@@ -412,7 +413,8 @@ async def thinking_group_reply(messages: list, new_msg_ids: list | None = None, 
         # 记录思考内容
         reasoning_content = getattr(completion_obj.choices[0].message, 'reasoning_content', None)
         if reasoning_content:
-            pxchat_logger.info(f"[思考过程] {reasoning_content}")
+            compact = " | ".join(line.strip() for line in reasoning_content.split("\n") if line.strip())
+            pxchat_logger.info(f"[思考过程] {compact}")
         
         result_text = completion_obj.choices[0].message.content
         
@@ -500,7 +502,8 @@ async def get_chat_reply(
         # 记录思考内容
         reasoning_content = getattr(reply_obj.choices[0].message, 'reasoning_content', None)
         if reasoning_content:
-            pxchat_logger.info(f"[思考过程] {reasoning_content}")
+            compact = " | ".join(line.strip() for line in reasoning_content.split("\n") if line.strip())
+            pxchat_logger.info(f"[思考过程] {compact}")
         
         reply = reply_obj.choices[0].message.content
         
