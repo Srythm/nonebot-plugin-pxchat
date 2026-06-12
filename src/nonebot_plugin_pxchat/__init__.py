@@ -4,7 +4,7 @@ from nonebot.plugin import PluginMetadata
 from nonebot.adapters.onebot.v11 import MessageEvent, Bot, Message, MessageSegment
 from .chat import should_reply_in_group, get_chat_reply_with_tools, thinking_group_reply
 from .context import get_context, add_message, clear_context, load_contexts, get_unjudged_messages, mark_messages_judged, has_unjudged_messages
-from .memory import load_memories, record_group_user_message, get_group_memory_hint, record_interaction
+from .memory import load_memories, record_group_user_message, get_group_memory_hint, record_interaction, prune_old_messages
 from .state import load_state, record_reply as state_record_reply, record_group_message as state_record_group_message, skip_reply as state_skip_reply, get_consecutive_replies
 from .admin import execute_mute_if_needed, check_bot_is_admin
 from .manager import chat_manager
@@ -34,6 +34,7 @@ __plugin_meta__ = PluginMetadata(
 # 初始化管理器和上下文
 load_contexts()
 load_memories()
+prune_old_messages()  # 启动时清理超过6小时的旧消息
 load_state()
 # 读取配置文件
 get_plugin_config(PluginConfig)
