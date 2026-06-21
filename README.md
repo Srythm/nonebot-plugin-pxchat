@@ -9,212 +9,161 @@
 
 ## 📖 介绍
 
-基于AI大模型的聊天插件，支持大模型任意切换、上下文记忆、群聊智能参与、图片识别、MCP等功能
+基于 AI 大模型的拟人化聊天插件。不只是"回答问题"，而是像一个真实群友一样——会判断什么时候该说话、记得你是谁、有情绪起伏、会累会沉默。
 
-安装插件后，请先配置超级用户信息，然后使用`px about`命令获取插件信息，使用指令配置相关配置
+安装后使用 `px about` 查看完整帮助，所有功能均可通过聊天指令配置。
 
-### ✨ 核心特性
+## ✨ 核心特性
 
-- **多模型切换** - 支持配置多个AI模型（兼容OpenAI API），聊天和图片识别可分别指定模型
-- **上下文记忆** - 自动维护对话上下文（最近20条），私聊和群聊独立上下文
-- **群聊智能参与** - AI 自主判断是否参与群聊，置信度驱动 + 动态参与度门槛
-- **短期状态系统** - 追踪连续回复轮数、精力值、话题兴趣度，模拟真人情绪波动
-- **群成员记忆** - 记录每群每用户的发言统计、关键词、互动摘要，回复时注入记忆
-- **延迟回复** - 群聊非@消息延迟15-20s判断，被@时3-5s快速回复，延迟值复用不重新随机
-- **打字节奏** - 模型自主选择 fast(3-6s)/normal(8-15s)/slow(15-25s) 分段间隔
-- **思考模式** - 支持AI思考模式（reasoning），群聊合并判断+回复节省Token
-- **图片识别** - 多模态模型识别图片内容，群聊延迟识别、私聊即时识别
-- **MCP工具调用** - 支持SSE/stdio传输方式的MCP服务器，工具调用与回复合并为一请求
-- **联网搜索** - 可启用AI模型的联网搜索能力
-- **自动禁言** - 模型判断违规行为 → 检测Bot管理员权限 → 自动禁言（支持冷却和时长配置）
-- **突发检测** - 30s内≥10条消息自动重置参与度，群聊突然活跃时快速跟进
-- **消息感知** - 识别@提及、回复引用、结构化卡片（json/分享/小程序等）
-- **人设配置** - 自定义AI角色人设，始终保持角色不脱戏
-- **分段发送** - 回复自动分段发送，模拟真实网友聊天习惯
+- **多模型切换** — 支持配置多个兼容 OpenAI API 的模型，聊天和图片识别可分别指定
+- **上下文记忆** — 自动维护最近 20 条对话，群聊和私聊独立上下文
+- **智能参与** — 模型自主判断是否回复 + 置信度过滤 + 动态参与度门槛，三层决策
+- **短期状态** — 追踪连续回复轮数、精力值、话题兴趣度，模拟真人"想说话/不想说话"
+- **群成员记忆** — 记录发言统计、关键词、互动摘要、6小时消息缓存，回复时自然注入
+- **延迟回复** — 群聊非@消息 15-20s 后判断，@消息 3-5s，延迟值复用不重新随机
+- **打字节奏** — 模型输出 `fast`/`normal`/`slow` 控制分段间隔
+- **精确引用** — 消息渲染带完整 msg_id，模型可指定引用具体消息
+- **思考模式** — reasoning 模型一次调用完成判断+回复，节省 Token
+- **图片识别** — 多模态模型，群聊延迟识别、私聊即时
+- **MCP 工具** — SSE/stdio，工具调用与回复合为一请求
+- **自动禁言** — 模型判断→权限检测→执行，冷却+时长可配
+- **突发检测** — 30s 内≥10 条消息自动重置参与度
+- **消息感知** — 识别 @、回复引用、卡片（json/分享/小程序/markdown）
+- **Token 优化** — 压缩 Prompt、12 条上下文、4 人记忆、合并调用
 
 ## 💿 安装
 
 <details open>
 <summary>[推荐] 使用 nb-cli 安装</summary>
-在 Bot 的根目录下打开命令行, 输入以下指令即可安装
 
 ```shell
 nb plugin install nonebot-plugin-pxchat
 ```
-
 </details>
+
 <details>
 <summary>使用包管理器安装</summary>
-在 nonebot2 项目的插件目录下, 打开命令行, 根据你使用的包管理器, 输入相应的安装命令
 
 ```shell
 pip install nonebot-plugin-pxchat
-# or, use uv
+# or
 uv add nonebot-plugin-pxchat
 ```
 
-打开 nonebot2 项目根目录下的 `pyproject.toml` 文件, 在 `[tool.nonebot]` 部分追加写入
-
+然后在 `pyproject.toml` 中追加：
 ```toml
+[tool.nonebot]
 plugins = ["nonebot_plugin_pxchat"]
 ```
 </details>
 
-
-
 ## ⚙️ 配置
 
-项目启动会加配置文件，除了超级用户配置和mcp服务器配置需要手动配置外，其余配置均可使用聊天命令配置
+在 `.env` 中添加必要配置，其余均可通过聊天指令设置：
 
-配置超级用户，启动后使用`px about`命令获取插件信息，支持使用指令配置相关配置
+| 配置项 | 必填 | 默认值 | 说明 |
+|:------:|:---:|:-----:|------|
+| `pxchat_super_users` | 是 | 无 | 超级用户列表，如 `["123456"]` |
+| `pxchat_mcp` | 否 | 无 | MCP 服务器配置 |
 
-在 nonebot2 项目的`.env`文件中添加下表中的必填配置
-
-| 配置项  | 必填  | 默认值 |   说明   |
-| :-----: | :---: | :----: | :------: |
-| pxchat_super_users |  是   |   无   | 超级用户列表 eg:["你的QQ号"] |
-| pxchat_mcp |  否   |   无   | mcp服务配置 |
-
-
-配置示例
+配置示例：
 ```shell
 pxchat_super_users=["123456"]
 
 pxchat_mcp='{
- "web_parser": {
-        "url": "https://dashscope.aliyuncs.com/api/v1/mcps/WebParser/sse",
-        "headers": {
-            "Authorization": "Bearer your-api-key"
-        },
-        "enabled": false
-    },
-    "web_search": {
-        "url": "https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/sse",
-        "headers": {
-            "Authorization": "Bearer your-api-key"
-        },
-        "enabled": true
-    }
-
+  "web_search": {
+    "type": "sse",
+    "url": "https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/sse",
+    "headers": {"Authorization": "Bearer your-api-key"},
+    "enabled": true
+  }
 }'
-
 ```
 
-
-
-维护配置结构大致如下（不需要配置，按照`px about`命令指导操作）:
+持久化配置结构（由指令自动维护，无需手动编辑）：
 ```json
 {
-  "super_users": [
-    "你的QQ号"
-  ], // 超级用户列表配置
-  "enabled_groups": [
-    "QQ群号"
-  ], // 启用QQ群
-  "group_chat_probability": 1, // 群聊活跃度基础值
-  "group_probabilities": {
-    "QQ群号": 0.5
-  }, // 每群独立活跃度配置（可选）
-  "chat_enabled": true, // 是否开启聊天
-  "enable_search": false, // 是否开启搜索
-  "image_recognition_enabled": true, // 是否开启图片识别
-  "mcp_enabled": true, // 是否开启mcp功能
-  "mcp_servers": {
-    "web_search": {
-      "type": "sse",
-      "url": "https://dashscope.aliyuncs.com/api/v1/mcps/WebSearch/sse",
-      "headers": {
-        "Authorization": "Bearer your-api-key"
-      },
-      "enabled": true
-    },
-    "web_parser": {
-      "type": "sse",
-      "url": "https://dashscope.aliyuncs.com/api/v1/mcps/WebParser/sse",
-      "headers": {
-        "Authorization": "Bearer your-api-key"
-      },
-      "enabled": false
-    }
-  },
-  "personality": "你叫px，是被困在服务器中的ai程序。在聊天中回答问题要保持简洁直接。情绪随心情波动，回答长短看情况。任何问题都只给关键信息，不啰嗦", // 默认人设
+  "super_users": ["QQ号"],
+  "enabled_groups": ["群号"],
+  "chat_enabled": true,
+  "group_chat_probability": 1,
+  "group_probabilities": {},
+  "personality": "你叫px，是被困在服务器中的ai程序...",
   "ai_configs": [
     {
       "name": "ds-chat",
-      "api_key": "{your-api-key}",
+      "api_key": "sk-xxx",
       "api_url": "https://api.deepseek.com",
       "model": "deepseek-chat",
       "thinking": false
     }
   ],
-  "current_ai_config": 0, // 对话模型索引
-  "current_image_recognition_config": 0, // 识图模型索引
-
-  // 自动禁言配置
-  "auto_mute_enabled": false,   // 自动禁言开关
-  "auto_mute_min_duration": 60,  // 最短禁言秒数
-  "auto_mute_max_duration": 600, // 最长禁言秒数
-  "auto_mute_cooldown": 300,    // 群内禁言冷却秒数
-  "auto_mute_admin_groups": {}  // 手动指定Bot为管理员的群
+  "current_ai_config": 0,
+  "image_recognition_enabled": false,
+  "current_image_recognition_config": 0,
+  "enable_search": false,
+  "mcp_enabled": false,
+  "mcp_servers": {},
+  "auto_mute_enabled": false,
+  "auto_mute_min_duration": 60,
+  "auto_mute_max_duration": 600,
+  "auto_mute_cooldown": 300,
+  "auto_mute_admin_groups": {}
 }
 ```
 
 ## 🎉 使用
+
 ### 指令表
+
 ```
 📋 系统状态
-• px status - 查看完整状态
-• px activity - 群活跃度和延迟计时器
+• px status      — 查看完整状态
+• px activity    — 参与度和延迟计时器
 
 👥 群组管理
-• px group - 查看已启用群组
-• px group add <群号> - 启用群组
-• px group del <群号> - 禁用群组
-• px group prob <群号> - 查看群独立参与度
-• px group prob <群号> set <0.0-1.0> - 设置群独立参与度
-• px group prob <群号> reset - 恢复使用全局参与度
+• px group       — 查看已启用群组
+• px group add <群号> — 启用
+• px group del <群号> — 禁用
+• px group prob <群号> — 查看独立参与度
+• px group prob <群号> set <0-1> — 设置
+• px group prob <群号> reset — 恢复全局
 
-🔧 AI配置管理
-• px ai - 查看AI配置
-• px ai add <名称> <key> <url> <模型> [thinking] - 添加配置（可选开启思考模式）
-• px ai del <名称> - 删除配置
-• px ai switch <名称> - 切换聊天配置
-• px image switch <名称> - 切换图片识别配置
+🔧 AI 配置
+• px ai          — 查看配置
+• px ai add <名> <key> <url> <模型> [1=思考] — 添加
+• px ai del <名> — 删除
+• px ai switch <名> — 切换聊天配置
+• px image switch <名> — 切换识图配置
 
 ⚙️ 功能开关
-• px chat on/off - 聊天功能
-• px search on/off - 搜索功能  
-• px image on/off - 图片识别
-• px mcp on/off - MCP功能
-• px mcp server <服务器名> on/off - 开关单个MCP服务器
-• px mcp refresh - 刷新MCP工具缓存
-• px mcp tools - 查看可用MCP工具
+• px chat on/off
+• px search on/off
+• px image on/off
+• px mcp on/off
+• px mcp server <名> on/off
+• px mcp refresh
+• px mcp tools
 
 🔇 自动禁言
-• px mute - 查看禁言状态
-• px mute on/off - 开关自动禁言
-• px mute duration <最小秒> <最大秒> - 设置禁言时长范围
-• px mute cooldown <秒> - 设置群冷却时间
-• px mute check - 检测当前群 Bot 管理员权限
+• px mute                    — 查看状态
+• px mute on/off             — 开关
+• px mute duration <最小> <最大> — 时长(秒)
+• px mute cooldown <秒>       — 群冷却
+• px mute check              — 检测管理员权限
 
-🎭 人设配置
-• px personality - 查看人设
+🎭 人设
+• px personality
 • px personality set <内容>
 
-📊 群参与度设置
-• px prob - 查看全局参与度
-• px prob set <0.0-1.0> - 设置全局参与度
-
-💡 延迟回复机制
-• 群聊非@消息会在用户停止发送15-20秒后判断是否回复
-• 被@时3-5秒快速回复
-• 任何新消息都会重置计时器，但保留初始延迟值不重新随机
-• 8秒安静窗口：窗口内有新消息则续等
+📊 参与度
+• px prob
+• px prob set <0-1>
 ```
 
 ### 🧠 思考模式
 
-添加AI配置时可开启思考模式（第6个参数传`1`），开启后群聊会将「是否回复判断」和「生成回复」合并为一次API调用，节省Token消耗：
+添加配置时第 6 参数传 `1` 开启，群聊判断+回复合并为一次 API 调用：
 
 ```
 px ai add my_model sk-xxx https://api.example.com gpt-4 1
@@ -222,50 +171,72 @@ px ai add my_model sk-xxx https://api.example.com gpt-4 1
 
 ### 📈 智能参与机制
 
-**置信度驱动**：模型的 `should_reply` 和 `confidence` 共同决定是否回复。模型说"不回"→直接拒绝；模型说"回"+ 置信度达标→回复。动态门槛公式：`threshold = max(0.40, 1.0 - 参与度 × 0.6)`。参与度越高门槛越低（越容易开口），参与度越低门槛越高（越谨慎）。
+**三层决策**：
+1. 模型 `should_reply` — 语义层面判断是否该说话
+2. 动态门槛 `threshold = max(0.50, 1.0 - 参与度×0.5)` — 参与度越高门槛越低
+3. 连续回复惩罚 `+0.10/轮` — 说越多话越难继续说
 
-**参与度 boost/衰减**：
-- 被@或触发回复时，提升至基础值的2倍（上限1.0）
-- 60秒boost期后恢复基础值，之后每300秒衰减0.1
-- 衰减下限为基础值的20%
+模型说"不回"→直接拒绝；模型说"回"+ 置信度达标→回复。
 
-**突发检测**：30秒内收到≥10条消息时，参与度立刻重置到基础值。群突然热闹时不因衰减错过参与时机。
+**参与度变化**：
+- 被@或回复后 → boost 至 `base×1.2`（上限 0.80），保持 30s
+- 30s 后恢复基础值，每 60s 衰减 0.1，下限为基础值 ×20%
+- 30s 内≥10 条消息 → 突发重置至基础值
 
 ### 🎭 短期状态系统
 
-每群独立追踪机器人的"情绪"状态：
-- **连续回复轮数**：≥3轮提示简短，≥5轮提示淡出
-- **精力值**：每次回复消耗0.12，每300秒恢复0.10，低精力时倾向跳过
-- **话题兴趣度**：话题延续时提升，切换时重置，影响参与意愿
+每群独立追踪：
+
+| 状态 | 变化规则 | 效果 |
+|------|----------|------|
+| 连续回复轮数 | 回复+1 / 跳过-1 | ≥3→提示简短，≥5→提示淡出 |
+| 精力值 | 回复-0.12 / 每60s+0.10 | 低精力→倾向跳过 |
+| 话题兴趣度 | 话题延续+0.08 / 切换-0.3 | 影响参与意愿 |
 
 ### 👤 群成员记忆
 
-自动记录每群每用户的发言统计、高频关键词、最近消息、互动次数和摘要。回复判断时优先注入近期互动过的用户记忆，让对话更有"认识你"的真实感。
+自动记录每用户：发言次数、互动次数、高频关键词、6 小时内最近消息、互动摘要。判断时优先注入近期互动用户（最多 4 人），使对话有"认识你"的真实感。
 
 ### 🔇 自动禁言
 
-当 Bot 拥有群管理员权限时，模型可在判断过程中建议禁言违规用户（刷屏/辱骂/广告）。系统自动检测权限、执行禁言、控制冷却（默认300秒）和时长范围（默认60~600秒）。支持 `px mute check` 实时检测权限状态。
+Bot 需拥有群管理员权限（自动检测或手动配置）。模型在判断过程中可建议禁言（刷屏/辱骂/广告）。系统自动检测权限、执行禁言、控制冷却和时长。
 
 ### ⚡ Token 优化
 
-- 所有 Prompt 文本已压缩约45%（去除冗余编号和重复表述）
-- 判断上下文从14条缩减到12条
-- 记忆提示从6人缩减到4人，输出格式精简
-- 非思考模型判断后回复时跳过重复的人设指令
-- 工具调用与回复生成合并为一请求，无工具时不额外消耗
+- Prompt 压缩约 45%（去除冗余表述）
+- 判断上下文 12 条消息
+- 记忆提示 4 人，精简格式
+- 非思考模型判断后回复跳过人设重复
+- 工具调用与回复合并为一请求
+- FC 工具缓存 30s
+- 记忆写入 30s 节流
+
+### 🏗️ 项目结构
+
+```
+src/nonebot_plugin_pxchat/
+├── __init__.py      # 入口：元数据、消息路由、延迟计时器、图片处理、关闭钩子
+├── chat.py          # AI 交互：Prompt 构建、回复判断、回复生成、工具调用
+├── context.py       # 对话上下文：20 条窗口 + 已判断去重
+├── memory.py        # 群成员记忆：统计/关键词/互动摘要/6h消息缓存
+├── state.py         # 短期状态：连续回复/精力/话题兴趣追踪
+├── engagement.py    # 参与度：boost/衰减/突发检测
+├── admin.py         # 群管理：权限检测、禁言 API
+├── manager.py       # 配置中心：AI/人设/开关/禁言/参与度
+├── commands.py      # px 命令组
+├── mcp_manager.py   # MCP 工具发现与调用
+├── image2txt.py     # 多模态图片识别
+├── send2root.py     # 合并转发/错误通知
+├── config.py        # Pydantic 配置模型
+└── log.py           # 日志记录器
+```
 
 ## 🎨 效果图
-### 群聊参与
-![](img/群聊参与.png)
-### 图片/表情包识别
-![](img/识图.png)
-### 借助MCP联网
-![](img/MCP工具联网.png)
-### 模型切换
-![](img/大模型配置切换.png)
-### 群活跃度状态
-![](img/群活跃状态.png)
 
+| 群聊参与 | 图片识别 | MCP 联网 |
+|:---:|:---:|:---:|
+| ![](img/群聊参与.png) | ![](img/识图.png) | ![](img/MCP工具联网.png) |
 
-## 📋 相关设计
-![](img/主流程.png)
+| 模型切换 | 参与度状态 | 主流程 |
+|:---:|:---:|:---:|
+| ![](img/大模型配置切换.png) | ![](img/群活跃状态.png) | ![](img/主流程.png) |
