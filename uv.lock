@@ -543,7 +543,7 @@ wheels = [
 ]
 
 [[package]]
-name = "nonebot-plugin-pxchat"
+name = "nonebot-plugin-pxchat-enhanced"
 version = "1.0.1"
 source = { editable = "." }
 dependencies = [

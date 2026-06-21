@@ -23,11 +23,11 @@ from .mcp_manager import *
 from typing import Dict, Set
 
 __plugin_meta__ = PluginMetadata(
-    name="pxchat",
-    description="基于AI大模型的聊天插件，支持多模型切换、上下文记忆、群聊智能参与、短期状态追踪、群成员记忆、图片识别、MCP工具调用、自动禁言等功能",
+    name="pxchat-enhanced",
+    description="基于AI大模型的拟人化聊天插件，支持多模型切换、上下文记忆、群聊智能参与、短期状态追踪、群成员记忆、图片识别、MCP工具调用、自动禁言等功能",
     usage="使用px about命令获取插件信息，支持指令配置",
     type="application",
-    homepage="https://github.com/Srythm/nonebot-plugin-pxchat",
+    homepage="https://github.com/Srythm/nonebot-plugin-pxchat-enhanced",
     config=PluginConfig,
     supported_adapters={"~onebot.v11"},
 )

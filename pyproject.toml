@@ -1,10 +1,10 @@
 [project]
-name = "nonebot-plugin-pxchat"
+name = "nonebot-plugin-pxchat-enhanced"
 version = "2.0.0"
-description = "基于AI大模型的聊天插件，支持多模型切换、上下文记忆、群聊智能参与、短期状态追踪、群成员记忆、图片识别、MCP工具调用、自动禁言等功能"
+description = "基于AI大模型的拟人化聊天插件，支持多模型切换、上下文记忆、群聊智能参与、短期状态追踪、群成员记忆、图片识别、MCP工具调用、自动禁言等功能"
 readme = "README.md"
 authors = [{ name = "Srythm", email = "2074447320@qq.com" }]
-urls = { Repository = "https://github.com/Srythm/nonebot-plugin-pxchat" }
+urls = { Repository = "https://github.com/Srythm/nonebot-plugin-pxchat-enhanced" }
 requires-python = ">=3.10"
 dependencies = [
     "nonebot2>=2.4.3,<3.0.0",
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [tool.nonebot]
-plugins = ["nonebot_plugin_pxchat"]
+plugins = ["nonebot_plugin_pxchat_enhanced"]
 
 [dependency-groups]
 dev = [

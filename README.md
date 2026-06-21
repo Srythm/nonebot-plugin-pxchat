@@ -2,7 +2,7 @@
     <a href="https://v2.nonebot.dev/store">
     <img src="https://raw.githubusercontent.com/fllesser/nonebot-plugin-template/refs/heads/resource/.docs/NoneBotPlugin.svg" width="310" alt="logo"></a>
 
-## ✨ nonebot-plugin-pxchat ✨
+## ✨ nonebot-plugin-pxchat-enhanced-enhanced ✨
 [![python](https://img.shields.io/badge/python-3.10|3.11|3.12|3.13-blue.svg)](https://www.python.org)
 [![uv](https://img.shields.io/badge/package%20manager-uv-black?style=flat-square&logo=uv)](https://github.com/astral-sh/uv)
 </div>
@@ -37,7 +37,7 @@
 <summary>[推荐] 使用 nb-cli 安装</summary>
 
 ```shell
-nb plugin install nonebot-plugin-pxchat
+nb plugin install nonebot-plugin-pxchat-enhanced
 ```
 </details>
 
@@ -45,15 +45,15 @@ nb plugin install nonebot-plugin-pxchat
 <summary>使用包管理器安装</summary>
 
 ```shell
-pip install nonebot-plugin-pxchat
+pip install nonebot-plugin-pxchat-enhanced
 # or
-uv add nonebot-plugin-pxchat
+uv add nonebot-plugin-pxchat-enhanced
 ```
 
 然后在 `pyproject.toml` 中追加：
 ```toml
 [tool.nonebot]
-plugins = ["nonebot_plugin_pxchat"]
+plugins = ["nonebot_plugin_pxchat_enhanced"]
 ```
 </details>
 
@@ -214,7 +214,7 @@ Bot 需拥有群管理员权限（自动检测或手动配置）。模型在判�
 ### 🏗️ 项目结构
 
 ```
-src/nonebot_plugin_pxchat/
+src/nonebot_plugin_pxchat_enhanced/
 ├── __init__.py      # 入口：元数据、消息路由、延迟计时器、图片处理、关闭钩子
 ├── chat.py          # AI 交互：Prompt 构建、回复判断、回复生成、工具调用
 ├── context.py       # 对话上下文：20 条窗口 + 已判断去重
