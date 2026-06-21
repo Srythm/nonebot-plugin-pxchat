@@ -13,8 +13,11 @@ MEMORY_FILE = store.get_plugin_data_file("px_chat_memory.json")
 MAX_RECENT_MESSAGES = 5
 MAX_KEYWORDS = 12
 MAX_MESSAGE_AGE = 6 * 3600  # 保留6小时内的消息
+SAVE_INTERVAL = 30  # 普通消息写入最短间隔（秒），避免每条消息都写磁盘
 
 _memories: Dict[str, Dict[str, Any]] = {}
+_dirty = False
+_last_save = 0.0
 
 
 def load_memories():
@@ -30,8 +33,26 @@ def load_memories():
 
 
 def save_memories():
+    """强制写入磁盘"""
+    global _dirty, _last_save
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(_memories, f, ensure_ascii=False, indent=2)
+    _dirty = False
+    _last_save = time.time()
+
+
+def _mark_dirty():
+    """标记需要保存，达到间隔时才真正写入"""
+    global _dirty
+    _dirty = True
+    if time.time() - _last_save >= SAVE_INTERVAL:
+        save_memories()
+
+
+def flush_memories():
+    """强制持久化（关闭时调用）"""
+    if _dirty:
+        save_memories()
 
 
 def _extract_keywords(content: str) -> List[str]:
@@ -99,7 +120,7 @@ def record_group_user_message(group_id: str, user_id: str, nickname: str, conten
     user_memory["keywords"] = dict(keyword_counts.most_common(MAX_KEYWORDS))
 
     group_memory["updated_at"] = now
-    save_memories()
+    _mark_dirty()  # 高频路径：节流写入
 
 
 def record_interaction(group_id: str, user_id: str, summary: str = ""):

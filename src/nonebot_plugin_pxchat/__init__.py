@@ -4,10 +4,11 @@ from nonebot.plugin import PluginMetadata
 from nonebot.adapters.onebot.v11 import MessageEvent, Bot, Message, MessageSegment
 from .chat import should_reply_in_group, get_chat_reply_with_tools, thinking_group_reply
 from .context import get_context, add_message, clear_context, load_contexts, get_unjudged_messages, mark_messages_judged, has_unjudged_messages
-from .memory import load_memories, record_group_user_message, get_group_memory_hint, record_interaction, prune_old_messages
+from .memory import load_memories, record_group_user_message, get_group_memory_hint, record_interaction, prune_old_messages, flush_memories
 from .state import load_state, record_reply as state_record_reply, record_group_message as state_record_group_message, skip_reply as state_skip_reply, get_consecutive_replies
 from .admin import execute_mute_if_needed, check_bot_is_admin
 from .manager import chat_manager
+from .engagement import GroupEngagementManager, probability_states as group_probability_states, decay_timers as group_timers
 from .commands import *
 from .send2root import *
 from .image2txt import *
@@ -23,10 +24,10 @@ from typing import Dict, Set
 
 __plugin_meta__ = PluginMetadata(
     name="pxchat",
-    description="基于AI的聊天插件，支持大模型任意切换、上下文记忆、群聊智能参与、图片识别、MCP等功能",
+    description="基于AI大模型的聊天插件，支持多模型切换、上下文记忆、群聊智能参与、短期状态追踪、群成员记忆、图片识别、MCP工具调用、自动禁言等功能",
     usage="使用px about命令获取插件信息，支持指令配置",
     type="application",
-    homepage="https://github.com/whopxxx/nonebot-plugin-pxchat",
+    homepage="https://github.com/Srythm/nonebot-plugin-pxchat",
     config=PluginConfig,
     supported_adapters={"~onebot.v11"},
 )
@@ -341,7 +342,7 @@ async def _delayed_reply_check(group_id: str, key: str, is_at: bool = False, del
             return
 
         pxchat_logger.info(f"[延迟] 群{group_id} 思考:回复 (conf={confidence:.2f}≥{threshold:.2f})")
-        group_manager.renew_probability(group_id)
+        group_manager.renew(group_id)
 
         # 直接使用合并调用返回的回复内容
         reply = result.get("reply")
@@ -383,7 +384,7 @@ async def _delayed_reply_check(group_id: str, key: str, is_at: bool = False, del
             return
 
         pxchat_logger.info(f"[延迟] 群{group_id} 判断:回复 (conf={confidence:.2f}≥{threshold:.2f}) {decision.get('reason', '')}")
-        group_manager.renew_probability(group_id)
+        group_manager.renew(group_id)
 
         # 生成回复
         try:
@@ -754,7 +755,7 @@ async def _(bot: Bot, event: MessageEvent):
 
         if is_at:
             pxchat_logger.info(f"群聊被@")
-            group_manager.renew_probability(group_id_str)
+            group_manager.renew(group_id_str)
             # 被@也走延迟计时器，但用更短的时间
             start_or_reset_group_timer(group_id_str, user_id, key, is_at=True)
             return
@@ -816,148 +817,9 @@ async def event_proc(event: MessageEvent):
 
 
 # ============================================================
-# 活跃度管理器
+# 参与度管理器（从 engagement.py 导入）
 # ============================================================
-
-group_timers: Dict[str, asyncio.Task] = {}
-group_probability_states: Dict[str, float] = {}
-# 消息突发检测：{group_id: [timestamp, ...]}
-_group_burst_times: Dict[str, list[float]] = {}
-_BURST_WINDOW = 30     # 检测窗口（秒）
-_BURST_THRESHOLD = 10  # 触发阈值（条数）
-
-class GroupProbabilityManager:
-    """群聊智能参与管理器"""
-
-    def __init__(self):
-        self._shutting_down = False
-        pxchat_logger.info(f"参与度管理器初始化完成，全局基础参与度: {chat_manager.get_group_chat_probability()}")
-
-    def record_message_and_check_burst(self, group_id: str):
-        """
-        记录消息时间戳，如果短时间大量消息（突发），重置参与度到基础值。
-        群聊突然活跃时不用等待衰减恢复，立刻回到积极状态。
-        """
-        now = time.time()
-        times = _group_burst_times.setdefault(group_id, [])
-        times.append(now)
-        # 清理过期时间戳
-        cutoff = now - _BURST_WINDOW
-        _group_burst_times[group_id] = [t for t in times if t > cutoff]
-        recent = len(_group_burst_times[group_id])
-
-        if recent >= _BURST_THRESHOLD:
-            base_prob = chat_manager.get_group_probability(group_id)
-            current = group_probability_states.get(group_id, base_prob)
-            if current < base_prob:
-                group_probability_states[group_id] = base_prob
-                # 取消正在进行的衰减任务，因为已经重置
-                if group_id in group_timers:
-                    task = group_timers[group_id]
-                    if not task.done():
-                        task.cancel()
-                    del group_timers[group_id]
-                pxchat_logger.info(
-                    f"[突发] 群{group_id} {_BURST_WINDOW}s内{recent}条消息，"
-                    f"参与度 {current:.2f}→{base_prob:.2f}"
-                )
-
-    async def _decay_task(self, group_id: str):
-        """参与度衰减：先等30秒保持boost，然后每120秒衰减0.1，最低保持基础值的20%"""
-        try:
-            # 30秒boost期
-            await asyncio.sleep(30)
-
-            if self._shutting_down:
-                base_prob = chat_manager.get_group_probability(group_id)
-                group_probability_states[group_id] = round(base_prob, 2)
-                if group_id in group_timers:
-                    del group_timers[group_id]
-                return
-
-            # boost期结束，恢复基础值，开始衰减
-            base_prob = chat_manager.get_group_probability(group_id)
-            min_prob = round(base_prob * 0.2, 2)
-            group_probability_states[group_id] = round(base_prob, 2)
-            pxchat_logger.info(f"群{group_id} boost结束，参与度恢复: {round(base_prob, 2):.2f}")
-
-            while not self._shutting_down:
-                await asyncio.sleep(60)
-
-                if self._shutting_down:
-                    break
-
-                current_prob = group_probability_states.get(group_id, 0.0)
-                new_prob = max(min_prob, round(current_prob - 0.1, 2))
-
-                group_probability_states[group_id] = new_prob
-                pxchat_logger.info(f"群{group_id} 参与度衰减: {current_prob:.2f}→{new_prob:.2f}")
-
-                if new_prob <= min_prob:
-                    pxchat_logger.info(f"群{group_id} 参与度已达下限{min_prob:.2f}")
-                    if group_id in group_timers:
-                        del group_timers[group_id]
-                    break
-
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            pxchat_logger.error(f"群{group_id} 衰减异常: {e}")
-            if group_id in group_timers:
-                del group_timers[group_id]
-            if group_id in group_probability_states:
-                del group_probability_states[group_id]
-
-    def renew_probability(self, group_id: str):
-        """续租参与度，提升到基础值的1.5倍（上限0.9），30秒后恢复"""
-        if self._shutting_down:
-            return False
-        try:
-            base_prob = chat_manager.get_group_probability(group_id)
-            boosted_prob = min(0.80, round(base_prob * 1.2, 2))
-            group_probability_states[group_id] = boosted_prob
-
-            if group_id in group_timers:
-                task = group_timers[group_id]
-                if not task.done():
-                    task.cancel()
-                del group_timers[group_id]
-
-            task = asyncio.create_task(self._decay_task(group_id))
-            group_timers[group_id] = task
-
-            pxchat_logger.info(f"群{group_id} 参与度boost: {boosted_prob:.2f}")
-            return True
-
-        except Exception as e:
-            pxchat_logger.error(f"群{group_id} 续租失败: {e}")
-            return False
-
-    def get_probability(self, group_id: str) -> float:
-        """获取活跃度，无记录时返回该群的基础概率"""
-        prob = group_probability_states.get(group_id, None)
-        if prob is None:
-            return chat_manager.get_group_probability(group_id)
-        return prob
-
-    def has_active_timer(self, group_id: str) -> bool:
-        return group_id in group_timers and not group_timers[group_id].done()
-
-    async def shutdown(self):
-        self._shutting_down = True
-        pxchat_logger.info("开始关闭活跃度管理器...")
-
-        for group_id, task in list(group_timers.items()):
-            if not task.done():
-                task.cancel()
-
-        group_timers.clear()
-        group_probability_states.clear()
-        _group_burst_times.clear()
-
-        pxchat_logger.info("活跃度管理器关闭完成")
-
-group_manager: GroupProbabilityManager = GroupProbabilityManager()
+group_manager: GroupEngagementManager = GroupEngagementManager()
 
 
 # ============================================================
@@ -1010,10 +872,8 @@ driver = get_driver()
 @driver.on_shutdown
 async def shutdown_hook():
     cancel_all_group_timers()
-
     cleanup_image_cache()
-
+    flush_memories()  # 确保内存中的记忆写入磁盘
     if group_manager:
         await group_manager.shutdown()
-
     log_shutdown(pxchat_logger)

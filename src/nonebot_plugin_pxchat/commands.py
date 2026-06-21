@@ -101,7 +101,7 @@ async def handle_group_manage(event: MessageEvent, args: Message = CommandArg())
             await group_cmd.finish("用法: px group add <群号>")
         group_id = parts[1]
         if chat_manager.enable_group(group_id):
-            group_manager.renew_probability(group_id)
+            group_manager.renew(group_id)
             await group_cmd.finish(f"✅ 已启用群聊 {group_id}")
         else:
             await group_cmd.finish(f"⚠️ 群聊 {group_id} 已启用")
